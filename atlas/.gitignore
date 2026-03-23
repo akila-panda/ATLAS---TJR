@@ -1,0 +1,10 @@
+node_modules/ 
+dist/ 
+.env 
+*.pyc 
+__pycache__/ 
+.DS_Store 
+postgres_data/ 
+redis_data/ 
+*.log 
+results/ 

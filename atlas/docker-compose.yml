@@ -1,0 +1,73 @@
+version: "3.9" 
+ 
+services: 
+  signal-engine: 
+    build: ./signal-engine 
+    ports: ["8001:8001"] 
+    environment: 
+      - POSTGRES_DSN=${DATABASE_URL} 
+      - REDIS_URL=${REDIS_URL} 
+      - ATLAS_MODE=${ATLAS_MODE} 
+      - LOG_LEVEL=${LOG_LEVEL} 
+      - ACCOUNT_BALANCE=${ACCOUNT_BALANCE} 
+    volumes: ["./signal-engine:/app"] 
+    depends_on: [postgres, redis] 
+    networks: [atlas-net] 
+    restart: unless-stopped 
+ 
+  api-server: 
+    build: ./api-server 
+    ports: ["3001:3001"] 
+    environment: 
+      - DATABASE_URL=${DATABASE_URL} 
+      - REDIS_URL=${REDIS_URL} 
+      - ATLAS_API_KEY=${ATLAS_API_KEY} 
+      - NODE_ENV=${NODE_ENV} 
+      - FRONTEND_ORIGIN=${FRONTEND_ORIGIN} 
+      - SIGNAL_ENGINE_URL=${SIGNAL_ENGINE_URL} 
+      - LOG_LEVEL=${LOG_LEVEL} 
+    volumes: ["./api-server/src:/app/src"] 
+    depends_on: [postgres, redis, signal-engine] 
+    networks: [atlas-net] 
+    restart: unless-stopped 
+    command: ["npx", "ts-node-dev", "--respawn", "--transpile-only", "src/index.ts"] 
+ 
+  frontend: 
+    build: ./frontend 
+    environment: 
+      - VITE_API_URL=${VITE_API_URL} 
+      - VITE_WS_URL=${VITE_WS_URL} 
+      - VITE_API_KEY=${VITE_API_KEY} 
+    volumes: ["./frontend/src:/app/src"] 
+    depends_on: [api-server] 
+    networks: [atlas-net] 
+
+ 
+  postgres: 
+    image: postgres:15-alpine 
+    ports: ["5432:5432"] 
+    environment: 
+      - POSTGRES_DB=${POSTGRES_DB} 
+      - POSTGRES_USER=${POSTGRES_USER} 
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD} 
+    volumes: 
+      - postgres_data:/var/lib/postgresql/data 
+      - ./api-server/src/db/migrations:/docker-entrypoint-initdb.d 
+    networks: [atlas-net] 
+    restart: unless-stopped 
+ 
+  redis: 
+    image: redis:7-alpine 
+    ports: ["6379:6379"] 
+    command: redis-server --appendonly yes 
+    volumes: [redis_data:/data] 
+    networks: [atlas-net] 
+    restart: unless-stopped 
+ 
+networks: 
+  atlas-net: 
+    driver: bridge 
+ 
+volumes: 
+  postgres_data: 
+  redis_data: 

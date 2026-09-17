@@ -1,6 +1,6 @@
 # ATLAS — Backtest Development Plan
 
-Status: **Phase 0 complete** (one gate item pending) · Created 2026-09-17 · EUR/USD, London Kill Zone
+Status: **Phase 1 complete** · Next: Phase 2 · Created 2026-09-17 · EUR/USD, London Kill Zone
 
 Working document. Tick boxes as we go, record real numbers in the Results
 tables, and do not skip a phase gate.
@@ -102,23 +102,51 @@ artefact dropped.
 
 Give ATLAS its own free, reproducible market data.
 
-- [ ] Create `signal-engine/data_pipeline/` and port the Dukascopy fetcher
+- [x] Create `signal-engine/data_pipeline/` and port the Dukascopy fetcher
       (public datafeed, no account, no key).
-- [ ] `fetch.py` — download 1-minute bars, cache raw `.bi5` per day on disk.
-- [ ] **Strip padded bars.** Dukascopy pads closed-market minutes with flat,
+- [x] `fetch.py` — download 1-minute bars, cache raw `.bi5` per day on disk.
+- [x] **Strip padded bars.** Dukascopy pads closed-market minutes with flat,
       zero-volume bars carrying the last price — all day Sunday until the
       21:00 UTC open, ~17% of a naive 15M series. Filter on `volume > 0`.
-- [ ] `adapter.py` — resample cached M1 into the four `List[Candle]` that
+- [x] `adapter.py` — resample cached M1 into the four `List[Candle]` that
       `run_backtest()` expects. Timeframe strings must match exactly:
       `"5min"`, `"15min"`, `"4h"`, `"1day"`. Cast volume to `int`.
-- [ ] Validation script: zero OHLC violations, no zero-volume bars, weekend
+- [x] Validation script: zero OHLC violations, no zero-volume bars, weekend
       gaps ~48h, Sunday bars start at 21:00 UTC, bar counts even across years.
 
 **Deliverable:** 11.7 years EUR/USD (2015-01-01 → 2026-09-16), ~4.36M M1 bars,
 all four timeframes derived from one aligned source.
 
-**Gate:** validation clean; `adapter.py` returns four non-empty lists whose
-timestamps align at session boundaries.
+**Gate: PASSED — 26/26 checks.**
+
+| | |
+|---|---|
+| Period | 2015-01-01 → 2026-09-16 (11.71 years) |
+| M1 source bars | 4,363,701 |
+| 5min / 15min / 4h / 1day | 875,713 / 291,953 / 18,866 / 3,662 |
+| Complete Asia sessions | 3,044 |
+| M5 bars in LKZ (02:00–05:00 EST) | 109,458 |
+| Bars-per-year spread | 0.4% |
+| OHLC violations | 0 |
+
+Run it with `./venv/bin/python -m data_pipeline.validate`.
+
+**Two data traps found and handled:**
+
+1. Dukascopy pads closed-market minutes with flat zero-volume bars carrying
+   the last traded price — all day Sunday until the 21:00 UTC open, ~17% of a
+   naive series. A zero-range 4H candle is trivially "swept and engulfed" by
+   whatever follows, which would have manufactured phantom signals. Filtered
+   at the M1 stage on `volume > 0`.
+2. Dukascopy volume is a float that drops far below 1.0 in thin sessions (min
+   observed 0.000876). `Candle.volume` is typed `int`, so a plain cast floored
+   125 real M5 bars to zero and made them look like padding. Bars that traded
+   now keep a floor of 1. Note backtest volume units differ from live (the EA
+   sends tick counts) — nothing in `strategy/` reads it, so it is
+   informational only.
+
+**Note:** the Phase 0 Docker gate is still unverified — Docker Desktop was not
+running. Close it with `make dev` before Phase 2 relies on the stack.
 
 ---
 
@@ -262,4 +290,5 @@ changes too — knowing a knob does nothing is worth as much as knowing it helps
 | Date | Phase | Note |
 |---|---|---|
 | 2026-09-17 | — | Plan created. Research reviewed. Nothing built yet. |
+| 2026-09-17 | 1 | Data pipeline built: `dukascopy.py`, `adapter.py`, `validate.py`. 26/26 checks pass on 11.71 years EURUSD. Padding filter and volume-cast traps fixed. Cache reused from prior work — no download needed. |
 | 2026-09-17 | 0 | Branch `phase-0-blockers`. Scheduler wired into lifespan; `weekly_swept` implemented from Daily candles per Rule 3.1c. Repo: 6,962 -> 89 tracked files, venv untracked, `src1` archived, `.env.local` leak closed. 5 commits. Docker gate outstanding. |

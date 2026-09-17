@@ -34,6 +34,10 @@ services:
  
   frontend: 
     build: ./frontend 
+    # nginx serves the built SPA on :80 inside the container. Without this
+    # mapping the dashboard is unreachable, despite SETUP.md 3 and
+    # FRONTEND_ORIGIN both naming http://localhost:5173.
+    ports: ["5173:80"] 
     environment: 
       - VITE_API_URL=${VITE_API_URL} 
       - VITE_WS_URL=${VITE_WS_URL} 

@@ -188,6 +188,7 @@ def run_backtest(
         )
 
         decision = None
+        asia_cached = None
         for i, bar in enumerate(session_m5):
             bar_close = _utc(bar.time) + timedelta(minutes=5)
 
@@ -205,9 +206,15 @@ def run_backtest(
             if len(vis_m5) < 20:
                 continue
 
-            asia = detect_asia_range(vis_m5, bar_close)
+            # The Asia window (20:00-00:00 EST) has closed before the kill
+            # zone opens, so the range is invariant across the LKZ bars. Live
+            # recomputes it every bar and gets the same answer; caching it here
+            # is equivalent and removes ~20M pytz conversions per full run.
+            if asia_cached is None:
+                asia_cached = detect_asia_range(vis_m5, bar_close)
+            asia = asia_cached
             if not asia.is_valid:
-                continue
+                break
 
             sweep = detect_sweep(vis_m5, asia, htf_ctx, bar_close)
             if not sweep.is_valid:

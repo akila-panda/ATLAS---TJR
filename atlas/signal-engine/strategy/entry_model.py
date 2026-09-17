@@ -119,6 +119,27 @@ def calculate_entry(
     # decision_tree node 9 will catch this and return NO_TRADE
     sl_pips = round(sl_pips, 1)
 
+    # ── Geometry guard ────────────────────────────────────────────────────────
+    # A long's stop must sit below its entry and a short's above it. Rule 5.1
+    # anchors the stop to the sweep candle's wick, but the FVG can form beyond
+    # that wick — price sweeps, keeps running, then displaces from a level past
+    # the original extreme — which puts the stop on the wrong side of the entry.
+    # Nothing downstream checked this: risk became abs(entry - sl), so a short
+    # with its stop below entry was recorded as hitting that stop for +1R, and
+    # MT5 would have rejected the live order as invalid.
+    if reversal_up and sl_price >= entry_price:
+        return None
+    if not reversal_up and sl_price <= entry_price:
+        return None
+
+    # Same problem on the target side: rr_ratio uses abs(), so a TP2 on the
+    # wrong side of entry still produced a healthy-looking R:R.
+    tp2_check = asia.asia_high if reversal_up else asia.asia_low
+    if reversal_up and tp2_check <= entry_price:
+        return None
+    if not reversal_up and tp2_check >= entry_price:
+        return None
+
     # ── TP structure (Rules 6.2, 6.3, 6.4) ───────────────────────────────────
     half_range = (asia.range_pips / 2.0) * PIP_SIZE
 

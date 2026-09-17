@@ -20,6 +20,14 @@ from config import (
 
 EST = pytz.timezone("America/New_York")
 
+# ── Phase 5 experiment switches ───────────────────────────────────────────────
+# Defaults reproduce the shipped rules exactly. strategy/variants.py flips these
+# one at a time to measure what each filter is actually contributing. Nothing in
+# the live path changes them.
+ALLOW_DOUBLE_SWEEP      = False   # Rule 2.6: reject when both ASH and ASL swept
+ALLOW_AMBIGUOUS_DOL     = False   # Rule 2.5: reject when Daily DOL is unclear
+BREAKOUT_FILTER_USE_DOL = True    # Rule 2.4c: DOL-aligned break counts as breakout
+
 
 @dataclass
 class SweepResult:
@@ -110,7 +118,7 @@ def detect_sweep(
             ssl_sweeps.append(c)
 
     # ── Rule 2.6: Double sweep check ──────────────────────────────────────────
-    if bsl_sweeps and ssl_sweeps:
+    if bsl_sweeps and ssl_sweeps and not ALLOW_DOUBLE_SWEEP:
         return SweepResult(
             detected=True,
             is_valid=False,
@@ -200,7 +208,7 @@ def detect_sweep(
         # Sweep below ASL — Judas LONG setup — DOL should be bullish (Rule 2.5b)
         aligns = dol_direction == "BULLISH"
 
-    if dol_direction == "AMBIGUOUS":
+    if dol_direction == "AMBIGUOUS" and not ALLOW_AMBIGUOUS_DOL:
         return SweepResult(
             detected=True, is_valid=False,
             direction=direction,
@@ -270,4 +278,4 @@ def _apply_breakout_filter(
         factor_c = dol == "BEARISH"   # breakout DOWN aligns with bearish DOL
 
     # Any positive factor = breakout
-    return factor_b or factor_c
+    return factor_b or (factor_c and BREAKOUT_FILTER_USE_DOL)

@@ -1,0 +1,148 @@
+/* ── Dashboard.css ────────────────────────────────────────────────────────── */
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* ── Topbar ───────────────────────────────────────────────────────────────── */
+.dashboard-topbar {
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+}
+
+.dashboard-topbar-brand {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.dashboard-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.dashboard-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+
+.dashboard-conn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-hi);
+  flex-shrink: 0;
+}
+
+.dashboard-conn-dot.connected    { background: var(--long); }
+.dashboard-conn-dot.reconnecting { background: var(--neutral); animation: atlas-pulse 1.6s ease-in-out infinite; }
+.dashboard-conn-dot.disconnected { background: var(--short); }
+
+.dashboard-conn-label {
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.dashboard-mode-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.dashboard-mode-badge.auto   { color: var(--accent);  border-color: var(--accent); background: var(--accent-dim); }
+.dashboard-mode-badge.manual { color: var(--neutral); border-color: var(--neutral); background: var(--neutral-dim); }
+
+/* ── Body ─────────────────────────────────────────────────────────────────── */
+.dashboard-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dashboard-chart {
+  flex: 65;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.dashboard-right {
+  flex: 35;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.dashboard-toggle-zone {
+  flex-shrink: 0;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-signal-zone {
+  flex: 1;
+  min-height: 0;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.dashboard-confluence-zone {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Bottom bar ───────────────────────────────────────────────────────────── */
+.dashboard-bottom {
+  height: 200px;
+  flex-shrink: 0;
+  display: flex;
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.dashboard-session {
+  flex: 40;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.dashboard-positions {
+  flex: 60;
+  overflow: hidden;
+}

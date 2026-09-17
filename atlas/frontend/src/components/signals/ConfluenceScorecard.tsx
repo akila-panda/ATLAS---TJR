@@ -1,8 +1,9 @@
 /**
  * frontend/src/components/signals/ConfluenceScorecard.tsx
- * Live 8-factor TJR confluence scorecard — Section 10 of strategy document.
+ * Live 8-factor TJR confluence scorecard — Section 10.
  */
 import { useAtlasStore } from "../../store/atlasStore";
+import "./ConfluenceScorecard.css";
 
 const FACTOR_NAMES = [
   "Daily HTF Bias",
@@ -28,18 +29,18 @@ const FACTOR_KEYS = [
 
 const MAX_SCORE = 21;
 
-function scoreBadge(score: number): string {
-  if (score === 3) return "bg-atlas-long text-atlas-bg";
-  if (score === 2) return "bg-atlas-neutral text-atlas-bg";
-  if (score === 1) return "bg-atlas-short text-white";
-  return "bg-atlas-border text-atlas-text-dim";
+function scoreBadgeClass(score: number): string {
+  if (score === 3) return "s3";
+  if (score === 2) return "s2";
+  if (score === 1) return "s1";
+  return "s0";
 }
 
-function gradeLabel(total: number): { label: string; color: string } {
-  if (total >= 18) return { label: "A+", color: "text-atlas-long" };
-  if (total >= 14) return { label: "A",  color: "text-atlas-accent" };
-  if (total >= 10) return { label: "B",  color: "text-atlas-neutral" };
-  return { label: "C", color: "text-atlas-short" };
+function gradeInfo(total: number): { label: string; cls: string; barCls: string } {
+  if (total >= 18) return { label: "A+",   cls: "aplus", barCls: "aplus" };
+  if (total >= 14) return { label: "A",    cls: "a",     barCls: "a" };
+  if (total >= 10) return { label: "B",    cls: "b",     barCls: "b" };
+  return               { label: "C",    cls: "c",     barCls: "c" };
 }
 
 export function ConfluenceScorecard() {
@@ -49,35 +50,33 @@ export function ConfluenceScorecard() {
     | { factors: Record<string, number>; reasons?: Record<string, string> }
     | undefined;
 
-  const scores: number[]  = FACTOR_KEYS.map((k) => factors?.factors?.[k] ?? 0);
-  const reasons: string[] = FACTOR_KEYS.map((k) => factors?.reasons?.[k] ?? "");
-  const total = scores.reduce((a, b) => a + b, 0);
+  const scores:  number[] = FACTOR_KEYS.map((k) => factors?.factors?.[k] ?? 0);
+  const reasons: string[] = FACTOR_KEYS.map((k) => factors?.reasons?.[k]  ?? "");
+  const total   = scores.reduce((a, b) => a + b, 0);
   const hasData = signal !== null;
-  const grade   = hasData ? gradeLabel(total) : null;
+  const grade   = hasData ? gradeInfo(total) : null;
 
   return (
-    <div className="h-full bg-atlas-surface border border-atlas-border flex flex-col overflow-hidden">
+    <div className="confluence-scorecard">
 
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-atlas-border">
-        <span className="font-mono text-[10px] tracking-[3px] text-atlas-text-dim uppercase">
-          Confluence Stack
-        </span>
+      <div className="confluence-scorecard-header">
+        <span className="confluence-scorecard-title">Confluence Stack</span>
         {hasData && grade && (
-          <span className={`font-mono text-xs font-bold ${grade.color}`}>
+          <span className={`confluence-total-badge ${grade.cls}`}>
             {total}/{MAX_SCORE} · {grade.label}
           </span>
         )}
       </div>
 
-      {/* Table */}
-      <div className="flex-1 overflow-y-auto">
-        <table className="w-full text-xs border-collapse">
+      {/* Factor table */}
+      <div className="confluence-table-wrapper">
+        <table className="confluence-table">
           <thead>
-            <tr className="border-b border-atlas-border">
-              <th className="text-left font-sans font-normal text-[9px] tracking-[2px] text-atlas-text-dim uppercase px-3 py-1.5">Factor</th>
-              <th className="text-center font-sans font-normal text-[9px] tracking-[2px] text-atlas-text-dim uppercase px-2 py-1.5 w-10">Sc</th>
-              <th className="text-left font-sans font-normal text-[9px] tracking-[2px] text-atlas-text-dim uppercase px-2 py-1.5">Reason</th>
+            <tr>
+              <th>Factor</th>
+              <th style={{ textAlign: "center", width: 40 }}>Sc</th>
+              <th>Reason</th>
             </tr>
           </thead>
           <tbody>
@@ -85,22 +84,15 @@ export function ConfluenceScorecard() {
               const score  = scores[i] ?? 0;
               const reason = reasons[i] ?? "";
               return (
-                <tr key={name} className="border-b border-atlas-border hover:bg-atlas-bg transition-colors">
-                  <td className="px-3 py-2 font-sans text-[11px] text-atlas-text-dim whitespace-nowrap">
-                    {name}
+                <tr key={name}>
+                  <td className="cf-factor-name">{name}</td>
+                  <td className="cf-score-cell">
+                    {hasData
+                      ? <span className={`cf-score-badge ${scoreBadgeClass(score)}`}>{score}</span>
+                      : <span style={{ color: "var(--text-dim)", fontSize: 10 }}>—</span>
+                    }
                   </td>
-                  <td className="px-2 py-2 text-center">
-                    {hasData ? (
-                      <span className={`inline-block font-mono font-bold text-[10px] px-1.5 py-0.5 min-w-[20px] text-center ${scoreBadge(score)}`}>
-                        {score}
-                      </span>
-                    ) : (
-                      <span className="text-atlas-text-dim font-mono text-[10px]">—</span>
-                    )}
-                  </td>
-                  <td className="px-2 py-2 font-mono text-[9px] text-atlas-text-dim max-w-[120px] truncate">
-                    {hasData && reason ? reason : "—"}
-                  </td>
+                  <td className="cf-reason">{hasData && reason ? reason : "—"}</td>
                 </tr>
               );
             })}
@@ -108,35 +100,35 @@ export function ConfluenceScorecard() {
         </table>
       </div>
 
-      {/* Total row with threshold markers */}
-      <div className="px-3 py-2 border-t border-atlas-border">
-        <div className="flex items-center justify-between mb-1">
-          <span className="font-mono text-[9px] tracking-[2px] text-atlas-text-dim uppercase">Total</span>
-          <span className={`font-mono text-xs font-bold ${hasData && grade ? grade.color : "text-atlas-text-dim"}`}>
+      {/* Footer */}
+      <div className="confluence-scorecard-footer">
+        <div className="cf-footer-row">
+          <span className="cf-footer-label">Total</span>
+          <span className={`cf-footer-total${grade ? ` confluence-total-badge ${grade.cls}` : ""}`}>
             {hasData ? `${total}/${MAX_SCORE}` : "—"}
           </span>
         </div>
-        {/* Progress bar with threshold markers */}
-        <div className="relative h-1 bg-atlas-bg">
-          {hasData && (
+
+        <div className="cf-progress-track">
+          {hasData && grade && (
             <div
-              className={`h-full transition-all duration-700 ${total >= 18 ? "bg-atlas-long" : total >= 14 ? "bg-atlas-accent" : total >= 10 ? "bg-atlas-neutral" : "bg-atlas-short"}`}
+              className={`cf-progress-fill ${grade.barCls}`}
               style={{ width: `${(total / MAX_SCORE) * 100}%` }}
             />
           )}
-          {/* Threshold ticks */}
           {[{ v: 10, label: "min" }, { v: 14, label: "A" }, { v: 18, label: "A+" }].map(({ v, label }) => (
             <div
               key={v}
-              className="absolute top-0 flex flex-col items-center"
+              className="cf-tick"
               style={{ left: `${(v / MAX_SCORE) * 100}%` }}
             >
-              <div className="w-px h-3 bg-atlas-border-hi" style={{ marginTop: "-1px" }} />
-              <span className="font-mono text-[7px] text-atlas-text-dim mt-0.5 -translate-x-1/2">{label}</span>
+              <div className="cf-tick-line" />
+              <span className="cf-tick-label">{label}</span>
             </div>
           ))}
         </div>
       </div>
+
     </div>
   );
 }

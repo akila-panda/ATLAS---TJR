@@ -1,0 +1,188 @@
+/* ── Settings.css ─────────────────────────────────────────────────────────── */
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.settings-header {
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+  gap: 12px;
+}
+
+.settings-header-brand {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.settings-header-crumb {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* Section */
+.settings-section-title {
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Status cards */
+.settings-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.status-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  box-shadow: var(--shadow-xs);
+}
+
+.status-card-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.status-card-dot.ok   { background: var(--long); }
+.status-card-dot.warn { background: var(--neutral); animation: atlas-pulse 1.6s ease-in-out infinite; }
+.status-card-dot.err  { background: var(--short); }
+
+.status-card-label {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.status-card-detail {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-card-detail.ok   { color: var(--long); }
+.status-card-detail.warn { color: var(--neutral); }
+.status-card-detail.err  { color: var(--short); }
+
+/* Constants table */
+.settings-table-wrapper {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.settings-table thead tr {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-table th {
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 9px 16px;
+}
+
+.settings-table td {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.settings-table tbody tr {
+  transition: background 0.1s;
+}
+
+.settings-table tbody tr:hover {
+  background: var(--bg);
+}
+
+.settings-table td.td-label {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text-mid);
+}
+
+.settings-table td.td-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-bright);
+}
+
+.settings-table td.td-rule {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--accent);
+}
+
+.settings-note {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin-top: 8px;
+}

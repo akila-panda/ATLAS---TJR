@@ -15,6 +15,15 @@ ACCOUNT_BALANCE = float(os.getenv("ACCOUNT_BALANCE", "100000"))
 ATLAS_MODE      = os.getenv("ATLAS_MODE",      "MANUAL")   # "MANUAL" | "AUTO"
 LOG_LEVEL       = os.getenv("LOG_LEVEL",       "info")
 
+# ─── Broker Timezone ──────────────────────────────────────────────────────────
+# MT5 sends candle open times in broker server time (NOT UTC).
+# Most ECN brokers (IC Markets, Pepperstone, etc.) run on:
+#   UTC+2 (EET)  — last Sunday October  → last Sunday March  (winter)
+#   UTC+3 (EEST) — last Sunday March    → last Sunday October (summer)
+# March 2026 = EEST = UTC+3.
+# UPDATE THIS each DST transition, or fix the EA to send UTC (see fix_broker_timezone.md).
+BROKER_UTC_OFFSET_HOURS = int(os.getenv("BROKER_UTC_OFFSET_HOURS", "3"))
+
 # ─── Session Timing (EST hours) ───────────────────────────────────────────────
 ASIA_START_EST  = 20    # Asia range formation window opens  20:00 EST (Rule 1.1)
 ASIA_END_EST    = 0     # Asia range formation window closes 00:00 EST (Rule 1.1)

@@ -5,20 +5,27 @@ Triggers the full TJR strategy pipeline on every new M5 bar close.
 """
 from __future__ import annotations
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 import structlog
 
 from models.candle import Candle, CandleBuffer
+from config import BROKER_UTC_OFFSET_HOURS
+from db.candle_persistence import save_candles
 
 log = structlog.get_logger(__name__)
 router = APIRouter()
 
+# Pre-compute the broker → UTC correction offset once at import time.
+# MT5 sends candle open times in broker server time (UTC+2 or UTC+3).
+# Subtracting this offset converts broker time → UTC for all strategy code.
+_BROKER_OFFSET = timedelta(hours=BROKER_UTC_OFFSET_HOURS)
+
 
 class CandleIn(BaseModel):
-    datetime: str    # ISO-8601 "YYYY-MM-DDTHH:MM:SS"
+    datetime: str    # ISO-8601 "YYYY-MM-DDTHH:MM:SS" (broker time, no tz suffix)
     open:     float
     high:     float
     low:      float
@@ -53,10 +60,13 @@ async def receive_mt5_candles(batch: CandleBatch, request: Request):
 
     # Trigger strategy pipeline on every new EURUSD M5 close
     if batch.symbol == "EURUSD" and batch.timeframe == "5min" and ingested > 0:
+        # Persist buffer to Redis before pipeline runs — survives restarts
+        asyncio.create_task(_persist_candles(request.app, "5min"))
         asyncio.create_task(_safe_pipeline(request.app))
 
     # Update HTF context on new D1 or H4 bar
     if batch.symbol == "EURUSD" and batch.timeframe in ("1day", "4h"):
+        asyncio.create_task(_persist_candles(request.app, batch.timeframe))
         asyncio.create_task(_update_htf_context(request.app))
 
     return {"status": "ok", "ingested": ingested}
@@ -76,11 +86,27 @@ async def receive_internal_candles(batch: CandleBatch, request: Request):
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _ingest_batch(batch: CandleBatch, buf: CandleBuffer) -> int:
-    """Parse and append candles to buffer. Returns count of new candles added."""
+    """
+    Parse and append candles to buffer. Returns count of new candles added.
+
+    Timezone correction:
+    MT5 sends datetimes in broker server time (no tz suffix, e.g. UTC+3).
+    datetime.fromisoformat() produces a naive datetime.
+    We treat it as broker time and subtract _BROKER_OFFSET to get UTC,
+    then attach timezone.utc so all downstream strategy code is tz-aware.
+    """
     count = 0
     for c in batch.candles:
         try:
-            dt = datetime.fromisoformat(c.datetime)
+            dt_naive = datetime.fromisoformat(c.datetime)
+
+            if dt_naive.tzinfo is None:
+                # Broker time → UTC: attach UTC marker then subtract offset
+                dt = (dt_naive.replace(tzinfo=timezone.utc) - _BROKER_OFFSET)
+            else:
+                # Already tz-aware (EA was fixed to send UTC+Z) — normalise to UTC
+                dt = dt_naive.astimezone(timezone.utc)
+
         except ValueError:
             log.warning("candle_parse_error", raw=c.datetime)
             continue
@@ -98,6 +124,16 @@ def _ingest_batch(batch: CandleBatch, buf: CandleBuffer) -> int:
         buf.append(candle)
         count += 1
     return count
+
+
+async def _persist_candles(app, tf: str) -> None:
+    """Persist candle buffer for `tf` to Redis — survives container restarts."""
+    try:
+        from db.redis_client import _r
+        buf: CandleBuffer = app.state.buffer
+        await save_candles(_r(), buf, tf)
+    except Exception as exc:
+        log.warning("candle_persist_error", timeframe=tf, error=str(exc))
 
 
 async def _safe_pipeline(app) -> None:

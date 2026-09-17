@@ -4,6 +4,7 @@
  */
 import { useAtlasStore } from "../../store/atlasStore";
 import { formatDateEST, getLKZStatus } from "../../lib/formatters";
+import "./SessionStatus.css";
 
 export function SessionStatus() {
   const session = useAtlasStore((s) => s.session);
@@ -13,89 +14,71 @@ export function SessionStatus() {
   const today     = formatDateEST(new Date());
   const lkzStatus = getLKZStatus();
 
-  const lkzColors = {
-    ACTIVE:  "text-atlas-long border-atlas-long",
-    WAITING: "text-atlas-text-dim border-atlas-border",
-    CLOSED:  "text-atlas-short border-atlas-short",
+  const htfClass: Record<string, string> = {
+    BULLISH:   "long",
+    BEARISH:   "short",
+    AMBIGUOUS: "neutral",
   };
 
-  const htfColors: Record<string, string> = {
-    BULLISH:   "text-atlas-long",
-    BEARISH:   "text-atlas-short",
-    AMBIGUOUS: "text-atlas-neutral",
-  };
-
-  const sweepDirection = signal?.decision_state?.["sweep"] as
+  const sweepData = signal?.decision_state?.["sweep"] as
     | { detected?: boolean; direction?: string }
     | undefined;
 
   return (
-    <div className="h-full bg-atlas-surface border border-atlas-border flex items-center px-4 gap-6 overflow-x-auto">
+    <div className="session-status">
 
       {/* Date */}
-      <Pill label="DATE" value={today} valueClass="text-atlas-text-bright" />
+      <div className="session-pill">
+        <span className="session-pill-label">Date</span>
+        <span className="session-pill-value">{today}</span>
+      </div>
 
       {/* Asia range */}
-      <div>
-        <span className="block font-sans text-[9px] tracking-[2px] text-atlas-text-dim uppercase">Asia Range</span>
+      <div className="session-pill">
+        <span className="session-pill-label">Asia Range</span>
         {session?.range_valid ? (
-          <span className="font-mono text-xs text-atlas-text-bright">
-            {session.asia_range_pips?.toFixed(1)} pips{" "}
-            <span className="text-atlas-long text-[9px]">✓ VALID</span>
+          <span className="session-pill-value">
+            {session.asia_range_pips?.toFixed(1)} pips
+            <span className="asia-valid-mark"> ✓</span>
           </span>
         ) : session?.invalid_reason ? (
-          <span className="font-mono text-xs text-atlas-short">
-            INVALID — {session.invalid_reason}
-          </span>
+          <span className="asia-invalid-text">INVALID — {session.invalid_reason}</span>
         ) : (
-          <span className="font-mono text-xs text-atlas-text-dim">—</span>
+          <span className="session-pill-value dim">—</span>
         )}
       </div>
 
       {/* HTF Bias */}
-      <div>
-        <span className="block font-sans text-[9px] tracking-[2px] text-atlas-text-dim uppercase">HTF Bias</span>
-        <span className={`font-mono text-xs font-bold ${htfColors[session?.htf_bias ?? "AMBIGUOUS"] ?? "text-atlas-text-dim"}`}>
+      <div className="session-pill">
+        <span className="session-pill-label">HTF Bias</span>
+        <span className={`session-pill-value ${htfClass[session?.htf_bias ?? "AMBIGUOUS"] ?? "dim"}`}>
           {session?.htf_bias ?? "—"}
         </span>
       </div>
 
-      {/* LKZ Status */}
-      <div>
-        <span className="block font-sans text-[9px] tracking-[2px] text-atlas-text-dim uppercase">LKZ</span>
-        <span className={`font-mono text-xs font-bold border px-1.5 py-0.5 ${lkzColors[lkzStatus]}`}>
-          {lkzStatus}
-        </span>
+      {/* LKZ */}
+      <div className="session-pill">
+        <span className="session-pill-label">LKZ</span>
+        <span className={`lkz-badge ${lkzStatus.toLowerCase()}`}>{lkzStatus}</span>
       </div>
 
-      {/* Sweep badge */}
-      <div>
-        <span className="block font-sans text-[9px] tracking-[2px] text-atlas-text-dim uppercase">Sweep</span>
-        {sweepDirection?.detected ? (
-          <span className="font-mono text-xs font-bold text-atlas-neutral">
-            {sweepDirection.direction ?? "—"}
-          </span>
-        ) : (
-          <span className="font-mono text-xs text-atlas-text-dim">NONE</span>
-        )}
+      {/* Sweep */}
+      <div className="session-pill">
+        <span className="session-pill-label">Sweep</span>
+        {sweepData?.detected
+          ? <span className="session-pill-value neutral">{sweepData.direction ?? "—"}</span>
+          : <span className="session-pill-value dim">NONE</span>
+        }
       </div>
 
       {/* Mode */}
-      <div>
-        <span className="block font-sans text-[9px] tracking-[2px] text-atlas-text-dim uppercase">Mode</span>
-        <span className={`font-mono text-xs font-bold ${mode === "AUTO" ? "text-atlas-accent" : "text-atlas-neutral"}`}>
+      <div className="session-pill">
+        <span className="session-pill-label">Mode</span>
+        <span className={`session-pill-value ${mode === "AUTO" ? "accent" : "neutral"}`}>
           {mode}
         </span>
       </div>
-    </div>
-  );
-}
 
-function Pill({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
-  return (
-    <div>
-      <span className="block font-sans text-[9px] tracking-[2px] text-atlas-text-dim uppercase">{label}</span>
-      <span className={`font-mono text-xs ${valueClass ?? "text-atlas-text-bright"}`}>{value}</span>
     </div>
   );
 }

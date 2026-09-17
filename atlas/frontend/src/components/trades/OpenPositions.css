@@ -1,0 +1,155 @@
+/* ── OpenPositions.css ────────────────────────────────────────────────────── */
+
+.open-positions {
+  height: 100%;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.open-positions-empty {
+  height: 100%;
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.open-positions-empty-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* Header */
+.open-positions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.op-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.op-header-title {
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.op-direction-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.op-direction-label.long  { color: var(--long); }
+.op-direction-label.short { color: var(--short); }
+
+.op-ticket {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.op-pnl {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.op-pnl.positive { color: var(--long); }
+.op-pnl.negative { color: var(--short); }
+
+/* Price grid */
+.op-prices {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+}
+
+.op-price-item {}
+
+.op-price-label {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 3px;
+}
+
+.op-price-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.op-price-value.entry   { color: var(--accent); }
+.op-price-value.sl      { color: var(--short); }
+.op-price-value.tp      { color: var(--long); }
+.op-price-value.tp-hit  { color: var(--long); text-decoration: line-through; opacity: 0.45; }
+
+/* Lifecycle flags */
+.op-flags {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--surface-2);
+}
+
+.trade-flag {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.trade-flag.is-active {
+  color: var(--long);
+}
+
+.trade-flag-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.trade-flag.is-active .trade-flag-dot {
+  background: var(--long);
+}
+
+.op-opened-time {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+}

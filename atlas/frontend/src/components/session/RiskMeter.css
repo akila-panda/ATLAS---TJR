@@ -1,0 +1,29 @@
+/* ── RiskMeter.css ────────────────────────────────────────────────────────── */
+
+.risk-meter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.risk-meter-info {
+  text-align: center;
+}
+
+.risk-meter-wl {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+}
+
+.risk-meter-budget {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  margin-top: 1px;
+}

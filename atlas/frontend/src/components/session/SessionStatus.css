@@ -1,0 +1,69 @@
+/* ── SessionStatus.css ────────────────────────────────────────────────────── */
+
+.session-status {
+  height: 100%;
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 28px;
+  overflow-x: auto;
+}
+
+/* Individual pill/data point */
+.session-pill {}
+
+.session-pill-label {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 3px;
+}
+
+.session-pill-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.session-pill-value.long     { color: var(--long); }
+.session-pill-value.short    { color: var(--short); }
+.session-pill-value.neutral  { color: var(--neutral); }
+.session-pill-value.accent   { color: var(--accent); }
+.session-pill-value.dim      { color: var(--text-dim); }
+
+/* LKZ badge */
+.lkz-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+}
+
+.lkz-badge.active  { color: var(--long);    border-color: var(--long);    background: var(--long-dim); }
+.lkz-badge.waiting { color: var(--text-dim); border-color: var(--border); }
+.lkz-badge.closed  { color: var(--short);   border-color: var(--short);   background: var(--short-dim); }
+
+/* Asia range valid / invalid inline */
+.asia-valid-mark {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--long);
+  margin-left: 4px;
+}
+
+.asia-invalid-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--short);
+}

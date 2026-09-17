@@ -1,6 +1,6 @@
 # ATLAS — Backtest Development Plan
 
-Status: **Phase 0 not started** · Created 2026-09-17 · EUR/USD, London Kill Zone
+Status: **Phase 0 complete** (one gate item pending) · Created 2026-09-17 · EUR/USD, London Kill Zone
 
 Working document. Tick boxes as we go, record real numbers in the Results
 tables, and do not skip a phase gate.
@@ -66,22 +66,35 @@ directions in Phase 4 rather than only the one TJR asserts.
 
 Make the code under test match the code that would run live.
 
-- [ ] Wire `start_scheduler()` / `stop_scheduler()` into `main.py` lifespan.
+- [x] Wire `start_scheduler()` / `stop_scheduler()` into `main.py` lifespan.
       Currently defined in `scheduler.py` and **never called anywhere** — the
       20:00 EST daily reset never runs, so `session_terminated` is permanent
       once set, contradicting SETUP.md §10.
-- [ ] Fix `htf_context.py:111` — `weekly_swept` is hardcoded `False` and never
+- [x] Fix `htf_context.py:111` — `weekly_swept` is hardcoded `False` and never
       set, so `htf_bias_score` caps at 2 instead of 3. Every setup scores one
       confluence point below true value against a `MIN_CONFLUENCE=10` gate.
       Either compute it from weekly candles or document it as deliberately unused.
-- [ ] Add `venv/` to `.gitignore` and `git rm -r --cached signal-engine/venv`
+- [x] Add `venv/` to `.gitignore` and `git rm -r --cached signal-engine/venv`
       (6,872 tracked files, 111 MB `.git`).
-- [ ] Delete or archive `frontend/src1/` — full duplicate of `src/` with
+- [x] Delete or archive `frontend/src1/` — full duplicate of `src/` with
       drifted contents and no CSS.
-- [ ] Commit the 18 files of uncommitted work before we start changing things.
+- [x] Commit the 18 files of uncommitted work before we start changing things.
 
 **Gate:** `docker-compose up` still healthy; dashboard still loads; no
 behaviour change other than the scheduler now running.
+
+**Gate status — partially verified.** Docker Desktop was not running, so the
+compose stack and dashboard were not exercised. Verified without it:
+`main.py` imports with the scheduler wired; `start_scheduler()` registers both
+jobs with next run 20:00 EDT and shuts down cleanly; `_weekly_level_swept`
+passes fixtures for no-sweep, high sweep, low sweep, stale sweep and thin
+history. **Run `make dev` once before Phase 2 to close this gate.**
+
+**Also fixed, beyond the original list:** `frontend/.env.local` held a live
+`VITE_API_KEY` and was not matched by `.gitignore` — committing Phase 0 as
+found would have pushed it to GitHub. `.gitignore` now covers `.env.*`, and
+every line had trailing whitespace which was cleaned up. `frontend.zip` build
+artefact dropped.
 
 ---
 
@@ -249,3 +262,4 @@ changes too — knowing a knob does nothing is worth as much as knowing it helps
 | Date | Phase | Note |
 |---|---|---|
 | 2026-09-17 | — | Plan created. Research reviewed. Nothing built yet. |
+| 2026-09-17 | 0 | Branch `phase-0-blockers`. Scheduler wired into lifespan; `weekly_swept` implemented from Daily candles per Rule 3.1c. Repo: 6,962 -> 89 tracked files, venv untracked, `src1` archived, `.env.local` leak closed. 5 commits. Docker gate outstanding. |

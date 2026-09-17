@@ -1,6 +1,6 @@
 # ATLAS — Backtest Development Plan
 
-Status: **Phase 1 complete** · Next: Phase 2 · Created 2026-09-17 · EUR/USD, London Kill Zone
+Status: **Phase 2 complete — GATE FAILED (26 trades < 50)** · Next: Phase 5 · Created 2026-09-17 · EUR/USD, London Kill Zone
 
 Working document. Tick boxes as we go, record real numbers in the Results
 tables, and do not skip a phase gate.
@@ -154,31 +154,78 @@ Run it with `./venv/bin/python -m data_pipeline.validate`.
 
 ## Phase 2 — Make the backtest runnable
 
-- [ ] Add `__main__` + `argparse` to `strategy/backtest.py` so the command
+- [x] Add `__main__` + `argparse` to `strategy/backtest.py` so the command
       already documented in SETUP.md §9 actually works:
       `python -m strategy.backtest --from 2015-01-01 --to 2026-09-16`
-- [ ] Wire the adapter in as the data source (keep an optional `--csv` path so
+- [x] Wire the adapter in as the data source (keep an optional `--csv` path so
       the documented CSV workflow also works).
-- [ ] Neutralise Redis/Postgres dependencies in backtest mode — `htf_context`
+- [x] Neutralise Redis/Postgres dependencies in backtest mode — `htf_context`
       must be computed per-session from D1/H4 rather than read from Redis.
-- [ ] First full run. Report Section 9.3 metrics.
-- [ ] Sanity-check 3 trades by hand against the raw bars: Asia range correct,
+- [x] First full run. Report Section 9.3 metrics.
+- [x] Sanity-check 3 trades by hand against the raw bars: Asia range correct,
       sweep genuine, CHoCH present, FVG midpoint right, SL/TP placed correctly.
 
-### Results — Phase 2
+### Results — Phase 2 (2015-01-01 → 2026-09-16, 3,661 sessions)
 
 | Metric | Value | Threshold | Pass? |
 |---|---|---|---|
-| Total trades | | ≥50 | |
-| Win rate TP1 | | ≥55% | |
-| Win rate TP2 | | ≥40% | |
-| Avg R:R | | ≥1.8 | |
-| Expectancy | | ≥+0.3R | |
-| Profit factor | | ≥1.4 | |
-| Max consecutive losses | | — | |
+| **Total trades** | **26** | ≥50 | **FAIL** |
+| Win rate TP1 | 17.4% | ≥55% | FAIL |
+| Win rate TP2 | 4.3% | ≥40% | FAIL |
+| Avg R:R | −0.02 | ≥1.8 | FAIL |
+| Expectancy | −0.018R | ≥+0.3R | FAIL |
+| Profit factor | 0.25 | ≥1.4 | FAIL |
+| Max consecutive losses | 11 | — | — |
+| Net P&L | −$7,226.67 | — | — |
 
-**Gate:** ≥50 trades. **If under 50 over 11.7 years, stop and go to Phase 5** —
-the filters are too tight to ever accumulate evidence, and that is the finding.
+TP1/TP2/TP3 hits 4/1/1 · SL hits 19 · runtime 2m41s.
+
+**Five defects found while making the CLI work** — see commit
+`fix(phase-2)`. In order of severity:
+
+1. `now_utc` pinned to session end (08:00 EST) → `is_fvg_expired()` always
+   true → node 14 could never pass → **zero trades over any period**.
+2. Whole-session candle visibility → `detect_sweep` saw unclosed bars.
+   Both fixed by stepping bar by bar at each M5 close, as live does.
+3. `post_entry` began at the sweep candle, not the entry decision.
+4. `_simulate_outcome` returned on first TP touch, discarding the runner, and
+   reported R for wins but raw **pips** for losses.
+5. `expectancy_r` substituted `avg_win = 2.0` when `avg_rr_achieved` was
+   negative — it reported **+0.500R "PASS"** beside PF 0.25 and a negative
+   P&L. Expectancy is one of the four go-live gates; it was structurally
+   incapable of reporting failure.
+
+Also: `_slice_candles` rescanned all 875k M5 candles per session (~3.6bn
+iterations). Replaced with a bisect-backed `CandleIndex`; full run went from
+not finishing to 2m41s.
+
+### Session funnel — where the 3,635 NO_TRADE sessions die
+
+Run with `./venv/bin/python -m strategy.funnel`.
+
+| Stage | Sessions lost | % of all |
+|---|---|---|
+| no session data (weekends) | 616 | 16.8% |
+| Asia range invalid | 484 | 13.2% |
+| **sweep invalid** | **2,335** | **63.8%** |
+| no 15M CHoCH | 171 | 4.7% |
+| no displacement | 14 | 0.4% |
+| decision tree rejected | 15 | 0.4% |
+| **ENTER** | **26** | **0.7%** |
+
+Terminal reasons: `BREAKOUT_NOT_JUDAS` 1,256 (34.3%) · `DOL_AMBIGUOUS` 484 ·
+`DOUBLE_SWEEP` 413 · `ASIA_RANGE_TOO_NARROW` 309 · `NO_SWEEP_IN_LKZ` 178 ·
+`NO_15M_CHOCH` 171 · `ASIA_RANGE_TOO_WIDE` 159 · `INSUFFICIENT_RR` 15.
+
+**The sweep-validity stage kills 91% of sessions that reach it.** Of those,
+Rule 2.4's breakout filter alone accounts for over half.
+
+**Gate: FAILED — 26 trades over 11.7 years, against a 50-trade minimum.**
+
+Per the plan, we do not proceed to Phase 3. A 26-trade sample cannot separate
+signal from noise: the strategy is not measurably profitable *or* unprofitable
+at this sample size. **Go to Phase 5** — the filters are too tight to
+accumulate evidence, and that is itself the finding.
 
 ---
 
@@ -292,6 +339,7 @@ changes too — knowing a knob does nothing is worth as much as knowing it helps
 | Date | Phase | Note |
 |---|---|---|
 | 2026-09-17 | — | Plan created. Research reviewed. Nothing built yet. |
+| 2026-09-17 | 2 | Backtest runnable for the first time. 5 correctness defects fixed + bisect optimisation. Full run: **26 trades / 3,661 sessions, expectancy −0.018R**. Gate FAILED (26 < 50). Funnel shows sweep validity kills 91% of surviving sessions. Proceeding to Phase 5, not Phase 3. |
 | 2026-09-17 | 0 | Docker gate closed. `scheduler_started jobs=2` confirmed in the running stack. Found and fixed a third bug: frontend had no host port mapping, dashboard was unreachable. |
 | 2026-09-17 | 1 | Data pipeline built: `dukascopy.py`, `adapter.py`, `validate.py`. 26/26 checks pass on 11.71 years EURUSD. Padding filter and volume-cast traps fixed. Cache reused from prior work — no download needed. |
 | 2026-09-17 | 0 | Branch `phase-0-blockers`. Scheduler wired into lifespan; `weekly_swept` implemented from Daily candles per Rule 3.1c. Repo: 6,962 -> 89 tracked files, venv untracked, `src1` archived, `.env.local` leak closed. 5 commits. Docker gate outstanding. |

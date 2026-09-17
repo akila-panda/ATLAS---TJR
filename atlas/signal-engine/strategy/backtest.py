@@ -5,6 +5,7 @@ Runs the full strategy pipeline over historical candle data.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
+from bisect import bisect_left, bisect_right
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -133,6 +134,11 @@ def run_backtest(
     no_trade_count = 0
     spread = spread_pips * PIP_SIZE
 
+    idx_m5  = CandleIndex(all_candles_m5)
+    idx_m15 = CandleIndex(all_candles_m15)
+    idx_h4  = CandleIndex(all_candles_h4)
+    idx_d1  = CandleIndex(all_candles_d1)
+
     # Group M5 candles by session date (EST date at 20:00 start)
     session_dates = _get_session_dates(all_candles_m5, start_date, end_date)
 
@@ -151,12 +157,10 @@ def run_backtest(
             ).replace(hour=8)
         )
 
-        session_m5  = _slice_candles(all_candles_m5,  asia_start, lkz_end)
-        session_m15 = _slice_candles(all_candles_m15, asia_start, lkz_end)
-        session_h4  = _slice_candles(all_candles_h4,
-                                     asia_start - timedelta(days=30), lkz_end)
-        session_d1  = _slice_candles(all_candles_d1,
-                                     asia_start - timedelta(days=60), lkz_end)
+        session_m5  = idx_m5.slice(asia_start, lkz_end)
+        session_m15 = idx_m15.slice(asia_start, lkz_end)
+        session_h4  = idx_h4.slice(asia_start - timedelta(days=30), lkz_end)
+        session_d1  = idx_d1.slice(asia_start - timedelta(days=60), lkz_end)
 
         if len(session_m5) < 20:
             no_trade_count += 1
@@ -503,16 +507,39 @@ def _get_session_dates(candles: List[Candle], start: datetime, end: datetime):
     return sorted(dates)
 
 
+class CandleIndex:
+    """
+    A candle list plus a parallel array of UTC open times, so a session slice
+    is a binary search instead of a full scan.
+
+    The naive version rescanned all 875k M5 candles for every one of ~3,000
+    sessions — about 3.6 billion iterations across the four timeframes, which
+    dominated total runtime. Phase 5 re-runs the whole backtest per parameter
+    variant, so this has to be cheap.
+    """
+
+    __slots__ = ("candles", "times")
+
+    def __init__(self, candles: List[Candle]) -> None:
+        self.candles = candles
+        self.times = [_utc(c.time) for c in candles]
+
+    def slice(self, start: datetime, end: datetime) -> List[Candle]:
+        """Candles whose open time falls within [start, end)."""
+        lo = bisect_left(self.times, start.astimezone(timezone.utc))
+        hi = bisect_left(self.times, end.astimezone(timezone.utc))
+        return self.candles[lo:hi]
+
+    def upto(self, cutoff: datetime, limit: int) -> List[Candle]:
+        """The last `limit` candles that had closed by `cutoff`."""
+        hi = bisect_right(self.times, cutoff.astimezone(timezone.utc))
+        return self.candles[max(0, hi - limit):hi]
+
+
 def _slice_candles(candles: List[Candle], start: datetime, end: datetime) -> List[Candle]:
-    """Return candles whose open time falls within [start, end)."""
-    s = start.astimezone(timezone.utc)
-    e = end.astimezone(timezone.utc)
-    result = []
-    for c in candles:
-        t = c.time.replace(tzinfo=timezone.utc) if c.time.tzinfo is None else c.time
-        if s <= t < e:
-            result.append(c)
-    return result
+    """Return candles whose open time falls within [start, end). Kept for callers
+    that hold a bare list; prefer CandleIndex.slice in hot loops."""
+    return CandleIndex(candles).slice(start, end)
 
 
 def _null_sweep():
@@ -546,14 +573,17 @@ def build_htf_contexts(
     """
     from strategy.htf_context import compute_htf_context
 
+    idx_d1 = CandleIndex(candles_d1)
+    idx_h4 = CandleIndex(candles_h4)
+
     contexts: Dict[str, dict] = {}
     for d in session_dates:
         cutoff = EST.localize(
             datetime.combine(d, datetime.min.time()).replace(hour=20)
         ).astimezone(timezone.utc)
 
-        d1 = [c for c in candles_d1 if _utc(c.time) <= cutoff][-60:]
-        h4 = [c for c in candles_h4 if _utc(c.time) <= cutoff][-50:]
+        d1 = idx_d1.upto(cutoff, 60)
+        h4 = idx_h4.upto(cutoff, 50)
         if len(d1) < 5:
             contexts[d.strftime("%Y-%m-%d")] = {"dol_direction": "AMBIGUOUS"}
             continue

@@ -21,6 +21,7 @@ from db.redis_client import (
     set_pending_signal, set_pending_signal_manual,
     set_trade_state, get_active_trade_id, get_trade_state,
 )
+from db.candle_persistence import restore_candles
 from db.postgres import init_postgres, close_postgres, insert_signal_log, insert_trade
 from routes.candles import router as candles_router
 from routes.signal  import router as signal_router
@@ -37,6 +38,7 @@ from strategy.entry_model     import calculate_entry
 from strategy.risk_manager    import validate_final
 from strategy.news_filter     import is_news_blocked
 from strategy.trade_manager   import process_trade_management, _state_to_dict
+from scheduler             import start_scheduler, stop_scheduler
 from config import ACCOUNT_BALANCE, ATLAS_MODE
 
 log = structlog.get_logger(__name__)
@@ -49,9 +51,17 @@ async def lifespan(app: FastAPI):
     app.state.buffer = CandleBuffer()
     await init_redis()
     await init_postgres()
+    # Restore candle buffer from Redis — Asia range detection survives restarts
+    from db.redis_client import _r
+    await restore_candles(_r(), app.state.buffer)
+    # Daily risk/session resets at 20:00 EST (Rule 7.3). Without this the
+    # session_terminated flag never clears and the engine stays dead after the
+    # first 2% loss day.
+    start_scheduler()
     log.info("atlas_engine_ready", mode=ATLAS_MODE, account_balance=ACCOUNT_BALANCE)
     yield
     log.info("atlas_engine_shutting_down")
+    stop_scheduler()
     await close_redis()
     await close_postgres()
 

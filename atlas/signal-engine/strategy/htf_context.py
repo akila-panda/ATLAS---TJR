@@ -108,7 +108,7 @@ def compute_htf_context(
     ctx.daily_ssl_below = _has_untested_swing_low(candles_d1, current_price)
 
     # ── Rule 3.1c: Weekly level swept in last 3 sessions ────────────────────
-    ctx.weekly_swept = False  # Updated by scheduler when weekly candles available
+    ctx.weekly_swept = _weekly_level_swept(candles_d1)
 
     # ── Determine DOL direction (Rules 3.1a + 3.1b must agree) ───────────────
     bullish_signals = int(ctx.daily_fvg_above) + int(ctx.daily_bsl_above)
@@ -258,3 +258,36 @@ def _find_h4_fvg(
             if c1.low > c3.high:
                 return c1.low, c3.high
     return 0.0, 0.0
+
+
+def _weekly_level_swept(candles_d1: List[Candle], lookback_sessions: int = 3) -> bool:
+    """
+    Rule 3.1c: has a prior weekly high or low been swept in the last N sessions?
+
+    ATLAS receives no weekly candles — the EA pushes M5/M15/H4/D1 only — so the
+    weekly levels are rebuilt by grouping Daily candles into ISO weeks. The
+    reference level is the last *completed* week; the sweep test is a wick of
+    any of the last `lookback_sessions` daily candles beyond that level.
+
+    Returns False when there is not enough history to name a completed week.
+    """
+    if len(candles_d1) < lookback_sessions + 1:
+        return False
+
+    # Group daily candles by ISO (year, week).
+    weeks: dict[tuple[int, int], list[Candle]] = {}
+    for c in candles_d1:
+        iso = c.time.isocalendar()
+        weeks.setdefault((iso[0], iso[1]), []).append(c)
+
+    if len(weeks) < 2:
+        return False
+
+    # The most recent key is the in-progress week; the one before it is complete.
+    ordered = sorted(weeks.keys())
+    prev_week = weeks[ordered[-2]]
+    prev_high = max(c.high for c in prev_week)
+    prev_low  = min(c.low  for c in prev_week)
+
+    recent = candles_d1[-lookback_sessions:]
+    return any(c.high > prev_high or c.low < prev_low for c in recent)

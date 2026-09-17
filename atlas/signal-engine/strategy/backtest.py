@@ -6,6 +6,7 @@ Runs the full strategy pipeline over historical candle data.
 from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 import pytz
 
@@ -23,6 +24,7 @@ from strategy.news_filter import is_news_blocked
 from config import (
     ACCOUNT_BALANCE, MIN_RR, SL_MAX_PIPS,
     TP1_CLOSE_PCT, TP2_CLOSE_PCT, PIP_SIZE,
+    LKZ_START_EST, ENTRY_EXPIRY_H, ENTRY_EXPIRY_M,
 )
 
 EST = pytz.timezone("America/New_York")
@@ -163,76 +165,100 @@ def run_backtest(
         htf_ctx   = htf_contexts.get(date_str, {"dol_direction": "AMBIGUOUS"})
         news_evs  = news_by_date.get(date_str, [])
 
-        # Run pipeline for this session
-        now_utc = lkz_end.astimezone(timezone.utc).replace(tzinfo=None)
+        # ── Step through the session one M5 close at a time ──────────────────
+        # Live ATLAS runs run_strategy_pipeline() on every M5 candle close, so
+        # the backtest must too. Evaluating the whole session at once would
+        # (a) pin now_utc past the 05:30 EST expiry so node 14 could never
+        # pass, and (b) let detect_sweep see candles that had not yet closed.
+        # The session runs 20:00 EST -> 08:00 EST the NEXT calendar day, so the
+        # kill-zone bounds must be absolute datetimes. Comparing bare hours
+        # breaks across midnight (hour 20 is not < 2, and 20 > 5).
+        next_day = session_date + timedelta(days=1)
+        lkz_open = EST.localize(
+            datetime.combine(next_day, datetime.min.time())
+            .replace(hour=LKZ_START_EST)
+        )
+        entry_expiry = EST.localize(
+            datetime.combine(next_day, datetime.min.time())
+            .replace(hour=ENTRY_EXPIRY_H, minute=ENTRY_EXPIRY_M)
+        )
 
-        # News filter
-        news_bl = is_news_blocked(news_evs, now_utc)
+        decision = None
+        for i, bar in enumerate(session_m5):
+            bar_close = _utc(bar.time) + timedelta(minutes=5)
 
-        # Asia range
-        asia = detect_asia_range(session_m5, now_utc)
+            # Nothing to decide before the kill zone opens.
+            if bar_close < lkz_open:
+                continue
+            # Rule 4.2d: the limit-order window shuts at 05:30 EST.
+            if bar_close >= entry_expiry:
+                break
 
-        # Sweep
-        sweep = detect_sweep(session_m5, asia, htf_ctx, now_utc) \
-                if asia.is_valid else _null_sweep()
+            # Only candles that have actually closed are visible.
+            vis_m5  = session_m5[: i + 1]
+            vis_m15 = [c for c in session_m15
+                       if _utc(c.time) + timedelta(minutes=15) <= bar_close]
+            if len(vis_m5) < 20:
+                continue
 
-        # Structure
-        structure = detect_post_sweep_structure(session_m5, session_m15, sweep) \
-                    if sweep.is_valid else _null_structure()
+            asia = detect_asia_range(vis_m5, bar_close)
+            if not asia.is_valid:
+                continue
 
-        # FVG / OB
-        fvg = detect_fvg(session_m5, sweep, structure, now_utc) \
-              if structure.choch_15m else _null_fvg()
-        ob  = detect_ob(session_m5, sweep, structure) \
-              if structure.choch_15m else _null_ob()
+            sweep = detect_sweep(vis_m5, asia, htf_ctx, bar_close)
+            if not sweep.is_valid:
+                continue
 
-        # Entry params
-        entry = calculate_entry(sweep, asia, fvg, ob, htf_ctx, ACCOUNT_BALANCE) \
-                if (fvg.found or ob.found) else None
+            structure = detect_post_sweep_structure(vis_m5, vis_m15, sweep)
+            fvg = detect_fvg(vis_m5, sweep, structure, bar_close) \
+                  if structure.choch_15m else _null_fvg()
+            ob  = detect_ob(vis_m5, sweep, structure) \
+                  if structure.choch_15m else _null_ob()
 
-        if entry is None:
+            entry = calculate_entry(sweep, asia, fvg, ob, htf_ctx, ACCOUNT_BALANCE) \
+                    if (fvg.found or ob.found) else None
+            if entry is None:
+                continue
+
+            confluence = score_confluence(
+                asia, sweep, structure, fvg, htf_ctx, news_evs, sweep.sweep_time
+            )
+            risk_state = {"session_terminated": False, "daily_loss_pct": 0.0}
+
+            dt = run_decision_tree(
+                news_blocked=is_news_blocked(news_evs, bar_close),
+                asia=asia,
+                sweep=sweep,
+                structure=structure,
+                fvg=fvg,
+                ob_found=ob.found,
+                entry_sl_pips=entry.sl_pips,
+                entry_rr_ratio=entry.rr_ratio,
+                required_rr=asia.required_rr,
+                confluence=confluence,
+                risk_state=risk_state,
+                entry_lot_size=entry.lot_size,
+                now_utc=bar_close,
+            )
+            if dt.outcome == "ENTER":
+                decision = (i, asia, sweep, structure, fvg, entry, confluence, dt)
+                break
+
+        if decision is None:
             no_trade_count += 1
             continue
 
-        # Confluence
-        confluence = score_confluence(
-            asia, sweep, structure, fvg, htf_ctx, news_evs, sweep.sweep_time
-        )
-
-        # Risk state (reset per session for backtest)
-        risk_state = {"session_terminated": False, "daily_loss_pct": 0.0}
-
-        # Decision tree
-        dt = run_decision_tree(
-            news_blocked=news_bl,
-            asia=asia,
-            sweep=sweep,
-            structure=structure,
-            fvg=fvg,
-            ob_found=ob.found,
-            entry_sl_pips=entry.sl_pips,
-            entry_rr_ratio=entry.rr_ratio,
-            required_rr=asia.required_rr,
-            confluence=confluence,
-            risk_state=risk_state,
-            entry_lot_size=entry.lot_size,
-            now_utc=now_utc,
-        )
-
-        if dt.outcome != "ENTER":
-            no_trade_count += 1
-            continue
+        bar_idx, asia, sweep, structure, fvg, entry, confluence, dt = decision
 
         # Apply spread to entry (Section 9.4b)
         direction = entry.direction
-        if direction == "BUY":
-            actual_entry = entry.entry_price + spread
-        else:
-            actual_entry = entry.entry_price - spread
+        actual_entry = (entry.entry_price + spread if direction == "BUY"
+                        else entry.entry_price - spread)
 
-        # Simulate outcome against subsequent M5 candles
-        post_entry = [c for c in session_m5 if c.time > (sweep.sweep_candle.time
-                      if sweep.sweep_candle else session_m5[0].time)]
+        # Simulate outcome against M5 candles AFTER the decision bar. The limit
+        # order may never be touched, in which case _simulate_outcome returns
+        # MISSED (Rule 9.4d).
+        post_entry = session_m5[bar_idx + 1:]
 
         outcome, rr_achieved, pnl_usd = _simulate_outcome(
             direction, actual_entry, entry.sl_price,
@@ -337,11 +363,13 @@ def compute_stats(
     )
     stats.max_consecutive_losses = max_consec
 
-    # Expectancy in R: E = (win_rate * avg_win_R) − (loss_rate * 1)
-    win_r   = stats.win_rate_tp1 / 100.0
-    loss_r  = 1.0 - win_r
-    avg_win = stats.avg_rr_achieved if stats.avg_rr_achieved > 0 else 2.0
-    stats.expectancy_r = round(win_r * avg_win - loss_r * 1.0, 3)
+    # Expectancy is simply the mean realised R across executed trades. The
+    # previous formula substituted avg_win = 2.0 whenever avg_rr_achieved was
+    # negative, which manufactured a positive expectancy from losing trades.
+    executed = [t for t in trades if t.outcome != "MISSED"]
+    stats.expectancy_r = round(
+        sum(t.rr_achieved for t in executed) / len(executed), 3
+    ) if executed else 0.0
 
     # Section 9.3 pass/fail
     notes = []
@@ -380,60 +408,80 @@ def _simulate_outcome(
     spread:      float,
 ) -> tuple[str, float, float]:
     """
-    Forward-simulate trade outcome against subsequent candle prices.
-    Returns (outcome_str, rr_achieved, pnl_usd).
+    Forward-simulate the trade, modelling the partial-exit ladder that
+    trade_manager.py actually runs live:
 
-    Rule 9.4d: Only count as entry if price returned to FVG zone.
-    If no candle touches entry price: classify as MISSED.
+      Rule 6.2c  TP1 hit -> close TP1_CLOSE_PCT (40%), move SL to breakeven
+      Rule 6.3   TP2 hit -> close TP2_CLOSE_PCT (35% of original), trail runner
+      Rule 6.4   remaining 25% runs to TP3
+
+    Returns (outcome, realised_R, pnl_usd) where realised_R is the position-
+    weighted R multiple — comparable across trades, unlike the previous
+    implementation which returned R for TP outcomes and raw pips for SL.
+
+    Rule 9.4d: if the limit is never touched, the trade is MISSED.
+    Intrabar ambiguity resolves against us: a bar spanning both stop and target
+    is treated as the stop.
     """
     is_long = direction == "BUY"
-    pip_val = 10.0 * lot_size   # $10 per pip per standard lot × lots
-
-    # Check if entry price was ever reached
-    entry_filled = any(
-        (is_long  and c.low  <= entry) or
-        (not is_long and c.high >= entry)
-        for c in candles
-    )
-    if not entry_filled:
+    risk = abs(entry - sl)
+    if risk <= 0:
         return "MISSED", 0.0, 0.0
 
+    risk_usd = (risk / PIP_SIZE) * 10.0 * lot_size     # $10/pip/standard lot
+    r_of = lambda px: (px - entry) / risk if is_long else (entry - px) / risk
+
+    p1 = TP1_CLOSE_PCT / 100.0                          # 0.40
+    p2 = TP2_CLOSE_PCT / 100.0                          # 0.35
+    p3 = 1.0 - p1 - p2                                  # 0.25
+
+    filled = False
+    tp1_hit = tp2_hit = False
+    stop = sl
+    realised = 0.0
+    remaining = 1.0
+
     for c in candles:
-        if is_long:
-            if c.low <= sl:
-                pips = (sl - entry) / PIP_SIZE
-                return "SL", round(pips, 1), round(pips * pip_val, 2)
-            if c.high >= tp3:
-                rr = abs(tp3 - entry) / abs(entry - sl)
-                pnl = abs(tp3 - entry) / PIP_SIZE * pip_val
-                return "TP3", round(rr, 2), round(pnl, 2)
-            if c.high >= tp2:
-                rr = abs(tp2 - entry) / abs(entry - sl)
-                pnl = abs(tp2 - entry) / PIP_SIZE * pip_val
-                return "TP2", round(rr, 2), round(pnl, 2)
-            if c.high >= tp1:
-                rr = abs(tp1 - entry) / abs(entry - sl)
-                pnl = abs(tp1 - entry) / PIP_SIZE * pip_val * (TP1_CLOSE_PCT / 100.0)
-                return "TP1", round(rr, 2), round(pnl, 2)
-        else:
-            if c.high >= sl:
-                pips = (entry - sl) / PIP_SIZE
-                return "SL", round(-pips, 1), round(-pips * pip_val, 2)
-            if c.low <= tp3:
-                rr = abs(tp3 - entry) / abs(entry - sl)
-                pnl = abs(tp3 - entry) / PIP_SIZE * pip_val
-                return "TP3", round(rr, 2), round(pnl, 2)
-            if c.low <= tp2:
-                rr = abs(tp2 - entry) / abs(entry - sl)
-                pnl = abs(tp2 - entry) / PIP_SIZE * pip_val
-                return "TP2", round(rr, 2), round(pnl, 2)
-            if c.low <= tp1:
-                rr = abs(tp1 - entry) / abs(entry - sl)
-                pnl = abs(tp1 - entry) / PIP_SIZE * pip_val * (TP1_CLOSE_PCT / 100.0)
-                return "TP1", round(rr, 2), round(pnl, 2)
+        if not filled:
+            # Limit order at `entry`; long fills on a dip, short on a rally.
+            if (is_long and c.low <= entry) or (not is_long and c.high >= entry):
+                filled = True
+            else:
+                continue
 
-    return "MISSED", 0.0, 0.0
+        hit_stop = c.low <= stop if is_long else c.high >= stop
+        if hit_stop:
+            realised += remaining * r_of(stop)
+            outcome = ("TP2" if tp2_hit else "TP1" if tp1_hit
+                       else ("BE" if abs(r_of(stop)) < 1e-9 else "SL"))
+            return outcome, round(realised, 3), round(realised * risk_usd, 2)
 
+        if not tp1_hit and ((is_long and c.high >= tp1) or
+                            (not is_long and c.low <= tp1)):
+            realised += p1 * r_of(tp1)
+            remaining -= p1
+            tp1_hit = True
+            stop = entry                                # Rule 6.2c: SL -> BE
+
+        if tp1_hit and not tp2_hit and ((is_long and c.high >= tp2) or
+                                        (not is_long and c.low <= tp2)):
+            realised += p2 * r_of(tp2)
+            remaining -= p2
+            tp2_hit = True
+
+        if tp2_hit and ((is_long and c.high >= tp3) or
+                        (not is_long and c.low <= tp3)):
+            realised += p3 * r_of(tp3)
+            return "TP3", round(realised, 3), round(realised * risk_usd, 2)
+
+    if not filled:
+        return "MISSED", 0.0, 0.0
+
+    # Session ended with the position still open — close at the last price
+    # (Rule 8.2.4 kills any open trade at the NY open).
+    realised += remaining * r_of(candles[-1].close)
+    outcome = "TP2" if tp2_hit else "TP1" if tp1_hit else "BE"
+    return outcome, round(realised, 3), round(realised * risk_usd, 2)
 
 def _get_session_dates(candles: List[Candle], start: datetime, end: datetime):
     """Return unique EST dates within the backtest range that have M5 data."""
@@ -482,3 +530,130 @@ def _null_fvg():
 def _null_ob():
     from strategy.order_block import OBResult
     return OBResult(found=False)
+
+# ─── CLI runner (Phase 2) ─────────────────────────────────────────────────────
+# SETUP.md 9 documents `python -m strategy.backtest`, but the module had no
+# __main__, no argparse and no data loader. This supplies all three.
+
+def build_htf_contexts(
+    session_dates: List[Any],
+    candles_d1:    List[Candle],
+    candles_h4:    List[Candle],
+) -> Dict[str, dict]:
+    """
+    Pre-compute the Daily/4H context for every session, using only candles that
+    had already closed by that session's Asia open. No look-ahead.
+    """
+    from strategy.htf_context import compute_htf_context
+
+    contexts: Dict[str, dict] = {}
+    for d in session_dates:
+        cutoff = EST.localize(
+            datetime.combine(d, datetime.min.time()).replace(hour=20)
+        ).astimezone(timezone.utc)
+
+        d1 = [c for c in candles_d1 if _utc(c.time) <= cutoff][-60:]
+        h4 = [c for c in candles_h4 if _utc(c.time) <= cutoff][-50:]
+        if len(d1) < 5:
+            contexts[d.strftime("%Y-%m-%d")] = {"dol_direction": "AMBIGUOUS"}
+            continue
+        contexts[d.strftime("%Y-%m-%d")] = compute_htf_context(d1, h4).to_dict()
+    return contexts
+
+
+def _utc(t: datetime) -> datetime:
+    return t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t
+
+
+def main() -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        prog="python -m strategy.backtest",
+        description="Backtest the TJR strategy over historical EUR/USD data.",
+    )
+    ap.add_argument("--symbol", default="EURUSD")
+    ap.add_argument("--from", dest="start", default="2015-01-01")
+    ap.add_argument("--to",   dest="end",   default="2026-09-16")
+    ap.add_argument("--spread", type=float, default=1.5,
+                    help="simulated spread in pips (Rule 9.4b)")
+    ap.add_argument("--out", default="results/backtest_trades.csv")
+    a = ap.parse_args()
+
+    from data_pipeline.adapter import load_candle_sets
+
+    sets = load_candle_sets(a.symbol, a.start, a.end)
+    m5, m15, h4, d1 = (sets["5min"], sets["15min"], sets["4h"], sets["1day"])
+
+    start = datetime.fromisoformat(a.start).replace(tzinfo=timezone.utc)
+    end   = datetime.fromisoformat(a.end).replace(tzinfo=timezone.utc)
+
+    session_dates = _get_session_dates(m5, start, end)
+    print(f"\n  {len(session_dates):,} candidate sessions")
+    print("  building HTF context per session (no look-ahead)...")
+    htf_contexts = build_htf_contexts(session_dates, d1, h4)
+
+    # No historical economic calendar is available, so the news filter (node 1)
+    # always passes. The backtest therefore sees MORE sessions than live ATLAS
+    # would — live blocks red-folder sessions under Rule 7.4a.
+    news_by_date: Dict[str, list] = {}
+
+    print("  running strategy pipeline...\n")
+    trades, stats = run_backtest(
+        m5, m15, h4, d1, htf_contexts, news_by_date, start, end, a.spread
+    )
+
+    print_report(trades, stats)
+
+    if trades:
+        out = Path(__file__).resolve().parent.parent / a.out
+        out.parent.mkdir(parents=True, exist_ok=True)
+        import csv as _csv
+        with out.open("w", newline="") as fh:
+            w = _csv.writer(fh)
+            fields = [f for f in vars(trades[0]) if f != "decision_state"]
+            w.writerow(fields)
+            for t in trades:
+                w.writerow([getattr(t, f) for f in fields])
+        print(f"\n  {len(trades)} trades written to {a.out}")
+    return 0
+
+
+def print_report(trades: List[BacktestTrade], stats: BacktestStats) -> None:
+    """Section 9.3 metrics against the SETUP.md 10 go-live thresholds."""
+    print("=" * 70)
+    print("TJR BACKTEST — Section 9.3 metrics")
+    print("=" * 70)
+    print(f"  sessions evaluated     {stats.total_trades + stats.no_trades:,}")
+    print(f"  NO_TRADE sessions      {stats.no_trades:,}")
+    print(f"  trades taken           {stats.total_trades:,}")
+    if not stats.total_trades:
+        print("\n  No trades. Nothing to measure.")
+        print("=" * 70)
+        return
+
+    rows = [
+        ("win rate TP1",   f"{stats.win_rate_tp1:.1f}%",  "55%",   stats.win_rate_tp1 >= 55),
+        ("win rate TP2",   f"{stats.win_rate_tp2:.1f}%",  "40%",   stats.win_rate_tp2 >= 40),
+        ("avg R:R",        f"{stats.avg_rr_achieved:.2f}", "1.8",  stats.avg_rr_achieved >= 1.8),
+        ("expectancy",     f"{stats.expectancy_r:+.3f}R", "+0.3R", stats.expectancy_r >= 0.3),
+        ("profit factor",  f"{stats.profit_factor:.2f}",  "1.4",   stats.profit_factor >= 1.4),
+    ]
+    print(f"\n  {'metric':<18}{'value':>12}{'min':>10}   status")
+    print("  " + "-" * 52)
+    for name, val, thresh, ok in rows:
+        print(f"  {name:<18}{val:>12}{thresh:>10}   {'PASS' if ok else 'FAIL'}")
+
+    print(f"\n  TP1/TP2/TP3 hits       {stats.tp1_hits}/{stats.tp2_hits}/{stats.tp3_hits}")
+    print(f"  SL hits                {stats.sl_hits}")
+    print(f"  max consecutive losses {stats.max_consecutive_losses}")
+    print(f"  net P&L                ${stats.total_pnl_usd:,.2f}")
+    if stats.total_trades < 50:
+        print(f"\n  WARNING: {stats.total_trades} trades is below the 50-trade minimum")
+        print("  (Section 9.3). Do not draw conclusions from this sample.")
+    print("=" * 70)
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

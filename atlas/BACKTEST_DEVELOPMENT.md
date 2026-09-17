@@ -1,6 +1,6 @@
 # ATLAS — Backtest Development Plan
 
-Status: **Phase 2 complete — GATE FAILED (26 trades < 50)** · Next: Phase 5 · Created 2026-09-17 · EUR/USD, London Kill Zone
+Status: **Phase 5 running · redirected to Phase 3′** · Created 2026-09-17 · Created 2026-09-17 · EUR/USD, London Kill Zone
 
 Working document. Tick boxes as we go, record real numbers in the Results
 tables, and do not skip a phase gate.
@@ -229,62 +229,110 @@ accumulate evidence, and that is itself the finding.
 
 ---
 
-## Phase 3 — Make the result trustworthy
+## Phase 3′ — Base rate and feature edge  *(replaces the original Phase 3 & 4)*
 
-A single number over all history is how people talk themselves into dead
-strategies. This phase is the guardrail.
+**Why the change.** The original Phase 3 was a rigor suite — IS/OOS split,
+random-entry control — to be run on the backtest's trades. Phase 2 produced 17
+trades, and Phase 5 showed no filter change lifts that above ~200 while holding
+expectancy. A rigor suite on 17 trades measures nothing: the 95% CI on
+expectancy at n=17 is roughly ±0.5R.
 
-- [ ] **In-sample / out-of-sample split.** Fix the date (proposed 2021-06-01),
-      record it here, never move it. Report both halves separately.
-- [ ] **Random-entry control.** N random entries at the same session times,
-      same SL distances, same TP structure, 300+ runs. Does TJR beat the
-      distribution? At 2:1 a random entry already wins ~33% — the R:R is a
-      denominator, not an edge.
-- [ ] **Node-failure histogram.** Which of the 14 decision-tree nodes rejects
-      the most setups? Tells us where the strategy is filtering vs over-filtering.
-- [ ] **Per-year and per-grade breakdown** (A+/A/B). Does confluence grade
-      actually predict outcome? If not, the whole scorecard is decoration.
+The deeper problem is structural, not parametric:
 
-### Results — Phase 3
+1. **Multiplicative filtering, never measured.** ~20 independent boolean gates.
+   At 70% pass each, combined pass rate is 0.7²⁰ ≈ 0.08%. Observed 0.46%. Every
+   gate was added on plausibility; none was measured. A gate that is noise
+   costs sample size and buys nothing.
+2. **Binary thresholds destroy information.** A 9.9-pip Asia range and a 1-pip
+   range are both simply "rejected". The measurement is discarded in favour of
+   a yes/no.
+3. **The confluence scorecard is unvalidated.** 21 points, A+/A/B grades,
+   gate at ≥10 — nobody has checked whether grade predicts outcome.
+4. **The R:R gate selects on geometry, not probability.** Node 10 rejects a
+   setup when the opposite Asia extreme is under 2R away, i.e. on where price
+   sits in the range — which says nothing about whether the reversal happens.
+5. **Structural sample cap.** One pair, one session, one setup: ~250
+   opportunities/year before any filter.
 
-| Test | Result | Verdict |
-|---|---|---|
-| In-sample expectancy | | |
-| Out-of-sample expectancy | | |
-| Strategy vs random (percentile) | | |
-| Top rejecting node | | |
-| Does grade predict outcome? | | |
+**The shift: stop filtering, start scoring.** Measure conditional probability
+on the full population of sweep events instead of gating it down to nothing.
+ATLAS discards 2,561 sessions that reach the sweep stage. That population is
+the asset.
 
-**Gate:** positive expectancy in **both** halves, and beating >95% of random
-runs. Anything less is not an edge.
+### 3′.1 — Build the event dataset
 
----
+- [ ] `analysis/events.py` — every session where price wicks beyond the Asia
+      high or low during the LKZ, **regardless of whether ATLAS's filters
+      accept it**. Target ~2,500 events over 11.7 years.
+- [ ] Record raw observables per event, all continuous, no thresholds:
+      sweep depth (pips and ATR), Asia range width, hour and minute of sweep,
+      body-close inside/outside, DOL state, displacement size, prior-day range,
+      current ATR, position within the weekly range (0–1).
 
-## Phase 4 — Reversal vs continuation
+### 3′.2 — Label outcomes
 
-The research question. Same data, same sessions, same risk model, inverted
-direction.
+- [ ] Forward MFE and MAE in **both** directions at fixed horizons (1h, 2h,
+      4h, to NY open), in R units relative to a standard stop.
+- [ ] Primary label: did price reach +2R in the reversal direction before −1R,
+      or the reverse? Also record the continuation-direction equivalent.
 
-- [ ] Add an `--invert` mode: on a BSL sweep go **long** (with the sweep)
-      instead of short; on SSL go short. Everything else identical.
-- [ ] Run both hypotheses over the full period with the Phase 3 rigor applied.
-- [ ] Test the Rule 2.4 breakout filter's actual discriminating power: of
-      sweeps it classifies as "Judas", what fraction reverse? Of those it
-      classifies as "breakout", what fraction continue? If the two rates are
-      the same, the filter is doing nothing.
+### 3′.3 — The base rate
 
-### Results — Phase 4
+- [ ] P(reversal | sweep of Asia extreme in LKZ) across all events. **Nothing
+      else means anything without this number.**
+- [ ] The same statistic in the continuation direction. This *is* the old
+      Phase 4 question — Osler (NY Fed SR150) says stop clusters cascade rather
+      than reverse — now answered on ~2,500 events instead of 17 trades.
 
-| Hypothesis | Trades | Win rate | Expectancy | OOS holds? |
-|---|---|---|---|---|
-| Reversal (TJR as written) | | | | |
-| Continuation (inverted) | | | | |
-| Rule 2.4 filter discriminates? | | | | |
+### 3′.4 — Feature likelihood ratios
 
-**This phase produces a publishable answer either way** — the reversal premise
-is either supported against Osler, or it isn't.
+- [ ] For each feature, P(outcome | feature bucket) against the base rate, with
+      confidence intervals. A feature that does not move the probability is
+      **dropped, not gated**. One that does gets a weight equal to how much it
+      moves it.
+- [ ] Re-derive the confluence scorecard from measured weights, and compare it
+      against the asserted 21-point version. Explicitly test whether A+ setups
+      beat B setups.
 
----
+### 3′.5 — Price-action features ATLAS does not currently use
+
+- [ ] **HTF S&R proximity** — distance from the swept level to the nearest
+      weekly/monthly high or low, in ATR units.
+- [ ] **Liquidity depth** — count and distance of untested prior swing
+      highs/lows above and below.
+- [ ] **Level confluence** — does the Asia extreme coincide with a HTF level,
+      a round number, the prior day's extreme? Count the overlaps.
+- [ ] **Weekly range position** — premium/discount as a continuous 0–1.
+
+### 3′.6 — Guard against fooling ourselves
+
+- [ ] Every feature validated on the untouched OOS half (split 2021-06-01).
+- [ ] Multiple-testing correction for the number of features tested, stated
+      explicitly. Testing 30 features will throw up spurious winners.
+- [ ] Report the count of features tested alongside every result.
+
+### Results — Phase 3′
+
+| | |
+|---|---|
+| Sweep events found | |
+| Base rate P(reversal) | |
+| Base rate P(continuation) | |
+| Features tested | |
+| Features surviving OOS + correction | |
+
+**Gate:** at least one feature moves P(outcome) by a margin that survives both
+the OOS half and the multiple-testing correction. **If nothing does, the honest
+answer is that this setup carries no measurable edge on EURUSD London** — and
+that is the project's finding.
+
+### 3′.7 — Only if the gate passes
+
+- [ ] Score setups by estimated probability rather than pass/fail.
+- [ ] Size proportional to edge (fractional Kelly, capped at the existing 1%
+      per-trade limit). Marginal setups become small positions instead of
+      discards — which is what fixes the sample-size problem at the root.
+- [ ] Set targets from the measured MFE distribution rather than asserting 2:1.
 
 ## Phase 5 — Parameter sensitivity
 

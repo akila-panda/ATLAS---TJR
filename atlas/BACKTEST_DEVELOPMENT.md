@@ -83,12 +83,15 @@ Make the code under test match the code that would run live.
 **Gate:** `docker-compose up` still healthy; dashboard still loads; no
 behaviour change other than the scheduler now running.
 
-**Gate status — partially verified.** Docker Desktop was not running, so the
-compose stack and dashboard were not exercised. Verified without it:
-`main.py` imports with the scheduler wired; `start_scheduler()` registers both
-jobs with next run 20:00 EDT and shuts down cleanly; `_weekly_level_swept`
-passes fixtures for no-sweep, high sweep, low sweep, stale sweep and thin
-history. **Run `make dev` once before Phase 2 to close this gate.**
+**Gate status — PASSED.** `make dev` brings all five services up. The
+signal-engine log now prints `scheduler_started jobs=2` at boot, which it
+never did before this phase. `/health` returns ok in MANUAL mode; Postgres
+migration 001 applied; WebSocket subscribed to 4 Redis channels.
+
+**A third bug surfaced while closing the gate:** the frontend service exposed
+`80/tcp` with no host port mapping, so `http://localhost:5173` had never
+resolved — despite SETUP.md §3 telling you to open it and `FRONTEND_ORIGIN`
+naming it for CORS. Added `ports: ["5173:80"]`. Dashboard now returns HTTP 200.
 
 **Also fixed, beyond the original list:** `frontend/.env.local` held a live
 `VITE_API_KEY` and was not matched by `.gitignore` — committing Phase 0 as
@@ -145,8 +148,7 @@ Run it with `./venv/bin/python -m data_pipeline.validate`.
    sends tick counts) — nothing in `strategy/` reads it, so it is
    informational only.
 
-**Note:** the Phase 0 Docker gate is still unverified — Docker Desktop was not
-running. Close it with `make dev` before Phase 2 relies on the stack.
+**Note:** Phase 0 Docker gate now closed — see Phase 0 above.
 
 ---
 
@@ -290,5 +292,6 @@ changes too — knowing a knob does nothing is worth as much as knowing it helps
 | Date | Phase | Note |
 |---|---|---|
 | 2026-09-17 | — | Plan created. Research reviewed. Nothing built yet. |
+| 2026-09-17 | 0 | Docker gate closed. `scheduler_started jobs=2` confirmed in the running stack. Found and fixed a third bug: frontend had no host port mapping, dashboard was unreachable. |
 | 2026-09-17 | 1 | Data pipeline built: `dukascopy.py`, `adapter.py`, `validate.py`. 26/26 checks pass on 11.71 years EURUSD. Padding filter and volume-cast traps fixed. Cache reused from prior work — no download needed. |
 | 2026-09-17 | 0 | Branch `phase-0-blockers`. Scheduler wired into lifespan; `weekly_swept` implemented from Daily candles per Rule 3.1c. Repo: 6,962 -> 89 tracked files, venv untracked, `src1` archived, `.env.local` leak closed. 5 commits. Docker gate outstanding. |

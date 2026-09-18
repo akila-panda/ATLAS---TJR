@@ -1,6 +1,6 @@
 # ATLAS — Backtest Development Plan
 
-Status: **Phase 5 running · redirected to Phase 3′** · Created 2026-09-17 · Created 2026-09-17 · EUR/USD, London Kill Zone
+Status: **Phases 0–2, 5 complete · Phase 3′ next** · Created 2026-09-17 · Created 2026-09-17 · EUR/USD, London Kill Zone
 
 Working document. Tick boxes as we go, record real numbers in the Results
 tables, and do not skip a phase gate.
@@ -348,10 +348,56 @@ measured. One change at a time, scored IS **and** OOS.
 - [ ] LKZ window bounds (02:00–05:00 EST)
 - [ ] TP structure and partial-close percentages (40/35/25)
 
-**Gate:** a change only counts if it improves **both** halves. Record rejected
-changes too — knowing a knob does nothing is worth as much as knowing it helps.
+### Results — Phase 5 (full history, split 2021-06-01)
 
----
+| variant | n | wr% | IS n | IS exp | OOS n | OOS exp |
+|---|---|---|---|---|---|---|
+| baseline (as shipped) | 17 | 28.6 | 9 | −0.116 | 8 | −0.659 |
+| allow ambiguous Daily DOL | 201 | 33.9 | 117 | −0.069 | 84 | +0.029 |
+| allow double sweep | 18 | 33.3 | 9 | −0.116 | 9 | −0.402 |
+| breakout filter: drop DOL factor | 27 | 38.1 | 17 | −0.164 | 10 | −0.304 |
+| sweep min 1 pip | 26 | 30.0 | 16 | −0.579 | 10 | +0.329 |
+| sweep max 15 pips | 18 | 33.3 | 9 | −0.116 | 9 | −0.395 |
+| asia range min 5 | 18 | 26.7 | 10 | −0.226 | 8 | −0.659 |
+| asia range max 60 | 22 | 27.8 | 13 | −0.381 | 9 | −0.260 |
+| displacement 1.2× | 16 | 23.1 | 8 | −0.500 | 8 | −0.659 |
+| SL max 25 pips | 16 | 30.8 | 8 | +0.032 | 8 | −0.659 |
+| confluence min 6 | 17 | 28.6 | 9 | −0.116 | 8 | −0.659 |
+| min R:R 1.5 | 17 | 28.6 | 9 | −0.116 | 8 | −0.659 |
+| all sweep filters relaxed | 225 | 35.8 | 133 | −0.036 | 92 | +0.065 |
+| sweep relaxed + wide asia | 265 | 35.5 | 158 | −0.078 | 107 | +0.119 |
+| everything relaxed | 426 | 37.2 | 242 | −0.179 | 184 | +0.193 |
+
+**Gate: FAILED. Not one variant is positive in both halves.**
+
+Four findings:
+
+1. **No configuration shows an edge.** Every large-sample variant averages to
+   approximately zero over the full period: ambiguous-DOL −0.028R,
+   all-sweep-relaxed +0.005R, sweep+wide-asia +0.002R, everything-relaxed
+   −0.018R. Four independent relaxations, 201–426 trades each, all landing on
+   nothing. That is a more informative result than the 17-trade baseline.
+
+2. **`MIN_CONFLUENCE` and `MIN_RR` never bind.** Lowering confluence 10→6 and
+   R:R 2.0→1.5 produce results *identical* to baseline, to three decimals.
+   The 21-point confluence scorecard — 8 factors, A+/A/B grading — rejects
+   nothing at the gate. It is decoration.
+
+3. **One filter controls sample size, and it is not earning its keep.** Rule
+   2.5's ambiguous-DOL rejection alone takes 17 trades to 201. Every other
+   filter moves the count by single digits. Relaxing it does not make
+   expectancy worse (−0.116 → −0.069 IS), so it is discarding ~92% of
+   opportunities for no measurable protection.
+
+4. **The IS/OOS split is a regime split, not an edge.** Every large-sample
+   variant is negative pre-2021-06 and positive after. Consistent across four
+   independent relaxations, which points at a change in market regime (the
+   2022 EURUSD parity move and the volatility that came with it) rather than
+   anything the rules are detecting.
+
+**Conclusion.** Parameter tuning cannot rescue this. The filters are not the
+problem to be tuned — the boolean-gate architecture is the problem. Proceed to
+Phase 3′.
 
 ## Phase 6 — Verdict
 
@@ -387,6 +433,7 @@ changes too — knowing a knob does nothing is worth as much as knowing it helps
 | Date | Phase | Note |
 |---|---|---|
 | 2026-09-17 | — | Plan created. Research reviewed. Nothing built yet. |
+| 2026-09-18 | 5 | Variant sweep complete: **no variant positive in both halves**. Large-sample relaxations all average ≈0.00R. `MIN_CONFLUENCE` and `MIN_RR` never bind — the confluence scorecard rejects nothing. Geometry bug fixed first (7/26 baseline trades had stop on wrong side, scoring stop-outs as +1R). Baseline corrected 26→17 trades, −0.018R→−0.387R. |
 | 2026-09-17 | 2 | Backtest runnable for the first time. 5 correctness defects fixed + bisect optimisation. Full run: **26 trades / 3,661 sessions, expectancy −0.018R**. Gate FAILED (26 < 50). Funnel shows sweep validity kills 91% of surviving sessions. Proceeding to Phase 5, not Phase 3. |
 | 2026-09-17 | 0 | Docker gate closed. `scheduler_started jobs=2` confirmed in the running stack. Found and fixed a third bug: frontend had no host port mapping, dashboard was unreachable. |
 | 2026-09-17 | 1 | Data pipeline built: `dukascopy.py`, `adapter.py`, `validate.py`. 26/26 checks pass on 11.71 years EURUSD. Padding filter and volume-cast traps fixed. Cache reused from prior work — no download needed. |
